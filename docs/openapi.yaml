@@ -1,0 +1,200 @@
+openapi: 3.1.0
+info:
+  title: Loyalty Platform — POS API
+  version: "1.0.0"
+  description: >
+    Programmatic earn / refer / redeem for POS and e-commerce. All endpoints
+    require an API key via `Authorization: Bearer <key>`. Mutations accept an
+    optional `Idempotency-Key` header and are rate-limited per key (60/min).
+servers:
+  - url: /api/v1
+security:
+  - apiKey: []
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string }
+      description: Retries with the same key replay the original result.
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+    Customer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        externalId: { type: string }
+        email: { type: string, nullable: true }
+        pointsBalance: { type: integer }
+        referralCode: { type: string }
+        referredBy: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+    Transaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        type: { type: string, enum: [earn, redeem, referral, adjust] }
+        points: { type: integer }
+        amount: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        reference: { type: string, nullable: true }
+        balanceAfter: { type: integer }
+        createdAt: { type: string, format: date-time }
+    Redemption:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        rewardId: { type: string, format: uuid }
+        pointsSpent: { type: integer }
+        voucherCode: { type: string }
+        status: { type: string, enum: [issued, used, void] }
+        createdAt: { type: string, format: date-time }
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Too many requests.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+paths:
+  /customers:
+    post:
+      summary: Create a customer (idempotent on externalId)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [externalId]
+              properties:
+                externalId: { type: string }
+                email: { type: string, format: email }
+                referralCode:
+                  type: string
+                  description: Referral code of an existing customer.
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Customer" } } } }
+        "200": { description: Already existed (idempotent replay), content: { application/json: { schema: { $ref: "#/components/schemas/Customer" } } } }
+        "400": { description: Invalid body, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /customers/{id}:
+    get:
+      summary: Fetch a customer (includes balance)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Customer" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /customers/{id}/transactions:
+    get:
+      summary: List a customer's ledger (newest first)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items: { $ref: "#/components/schemas/Transaction" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /transactions:
+    post:
+      summary: Record an earn
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerId, amount]
+              properties:
+                customerId: { type: string, format: uuid }
+                amount: { type: number, description: "Purchase value; points = floor(amount * earn_rate)." }
+                reference: { type: string }
+      responses:
+        "200":
+          description: Earn recorded (or idempotent replay)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transaction: { $ref: "#/components/schemas/Transaction" }
+                  balance: { type: integer }
+                  referrerPaid: { type: boolean }
+        "400": { description: Invalid body, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Customer not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /redemptions:
+    post:
+      summary: Redeem points for a reward voucher
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerId, rewardId]
+              properties:
+                customerId: { type: string, format: uuid }
+                rewardId: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Voucher issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  redemption: { $ref: "#/components/schemas/Redemption" }
+                  balance: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { description: Insufficient balance or reward unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /redemptions/{id}/use:
+    post:
+      summary: Mark an issued voucher as used
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Marked used, content: { application/json: { schema: { type: object, properties: { redemption: { $ref: "#/components/schemas/Redemption" } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Not in issued state, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { $ref: "#/components/responses/RateLimited" }

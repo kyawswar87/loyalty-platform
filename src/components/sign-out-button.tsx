@@ -1,0 +1,18 @@
+import { signOut } from "@/auth";
+import { Button } from "@/components/ui/button";
+
+/** Logout control: a form that posts to a `signOut` Server Action. */
+export function SignOutButton() {
+  return (
+    <form
+      action={async () => {
+        "use server";
+        await signOut({ redirectTo: "/login" });
+      }}
+    >
+      <Button type="submit" variant="outline" size="sm">
+        Sign out
+      </Button>
+    </form>
+  );
+}
