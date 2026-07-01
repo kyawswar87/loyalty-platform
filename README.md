@@ -86,6 +86,7 @@ Staff accounts come from the seed — there is no public sign-up.
 | `npm run db:studio` | Open Drizzle Studio |
 | `npm run db:seed` | Seed the admin, program config, demo API key, and demo reward |
 | `npm run check:integrity` | Assert every customer balance reconciles with the ledger |
+| `npm run docs:build` | Rebuild the concatenated system-docs bundle from `docs/system/` |
 
 ## Health check
 
@@ -159,6 +160,14 @@ answer **streams in token-by-token**.
   memory yet), and history lives only in the browser tab — it clears on reload.
 
 The SSE parsing core lives in `src/lib/chat.ts` (`parseSseBuffer`) and is unit-tested.
+
+### Knowledge base for the assistant
+
+A RAG-ready knowledge base describing the whole system (concepts, workflows, POS API,
+analytics, and an FAQ) lives in [`docs/system/`](./docs/system/) — small, self-contained
+topic files with frontmatter, plus a concatenated bundle
+(`docs/system/loyalty-platform-system-docs.md`) for ingestion. Edit the topic files and
+regenerate the bundle with `npm run docs:build`.
 
 ## Project status
 
